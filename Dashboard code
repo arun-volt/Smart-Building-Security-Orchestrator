@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AK Fortress | Command Center</title>
+    <style>
+        :root { --bg: #0f172a; --panel: #1e293b; --text: #f8fafc; --safe: #10b981; --alert: #ef4444; --border: #334155; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: var(--bg); color: var(--text); padding: 30px; }
+        h1 { text-align: center; color: #38bdf8; margin-bottom: 20px; }
+        .header-controls { text-align: center; margin-bottom: 40px; }
+        .notify-btn { background: #38bdf8; color: #0f172a; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .notify-btn:hover { background: #0284c7; color: white; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 25px; max-width: 1200px; margin: 0 auto; }
+        .card { background: var(--panel); padding: 25px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 4px 6px rgba(0,0,0,0.5); }
+        .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px dashed var(--border); }
+        .badge { padding: 6px 12px; border-radius: 20px; font-weight: bold; font-size: 0.9rem; }
+        .status-safe { background: rgba(16, 185, 129, 0.2); color: var(--safe); border: 1px solid var(--safe); }
+        .status-alert { background: rgba(239, 68, 68, 0.2); color: var(--alert); border: 1px solid var(--alert); animation: pulse 1.5s infinite; }
+        .camera-feed { width: 100%; border-radius: 8px; margin-top: 15px; border: 2px solid var(--border); min-height: 240px; background: #000; object-fit: cover; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 70% { box-shadow: 0 0 0 10px rgba(239,68,68,0); } 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); } }
+    </style>
+</head>
+<body>
+    <h1>AK FORTRESS COMMAND CENTER</h1>
+    
+    <div class="header-controls">
+        <button class="notify-btn" onclick="requestNotifications()">🔔 Enable Browser Notifications</button>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h2>Ground Floor / Lobby</h2>
+            <div class="stat-row"><span>Laser Tripwire</span><span id="camTrip" class="badge status-safe">SECURE</span></div>
+            <img id="securityCam" class="camera-feed" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" alt="Standby">
+        </div>
+        
+        <div class="card">
+            <h2>First Floor / Secure Room</h2>
+            <div class="stat-row"><span>Room Intruder (PIR)</span><span id="f1Motion" class="badge status-safe">CLEAR</span></div>
+            <div class="stat-row"><span>Fire / Smoke</span><span id="f1Fire" class="badge status-safe">CLEAR</span></div>
+            <div class="stat-row"><span>System State</span><span id="f1Alarm" class="badge status-safe">ARMED</span></div>
+        </div>
+
+        <div class="card">
+            <h2>Compound Perimeter</h2>
+            <div class="stat-row"><span>Fence Integrity</span><span id="fence" class="badge status-safe">SECURE</span></div>
+            <div class="stat-row"><span>Electric Grid</span><span id="shock" class="badge status-safe">OFF</span></div>
+            <div class="stat-row"><span>Ground Fire Sensors</span><span id="gndFire" class="badge status-safe">CLEAR</span></div>
+        </div>
+    </div>
+
+    <script>
+        // === இங்கே உங்கள் IP களை மாற்றவும் ===
+        const camIP = "http://192.168.1.101"; 
+        const floor1IP = "http://192.168.1.102";
+        const compIP = "http://192.168.1.103";
+
+        function requestNotifications() {
+            if ("Notification" in window && Notification.permission !== "denied") {
+                Notification.requestPermission().then(p => {
+                    if (p === "granted") new Notification("AK Fortress", { body: "Notifications are Active!" });
+                });
+            }
+        }
+
+        function triggerPopup(title, message) {
+            if (Notification.permission === "granted") new Notification(title, { body: message });
+        }
+
+        function updateBadge(id, isAlert, safeText, alertText) {
+            const el = document.getElementById(id);
+            el.className = isAlert ? 'badge status-alert' : 'badge status-safe';
+            el.innerText = isAlert ? alertText : safeText;
+        }
+
+        let f1LastAlarm = false;
+        let compLastAlarm = false;
+
+        function pollSystems() {
+            fetch(`${camIP}/status`).then(r => r.json()).then(data => {
+                if(data.laserTripped) {
+                    updateBadge('camTrip', true, 'SECURE', 'TRIPPED');
+                    document.getElementById('securityCam').src = `${camIP}/photo?t=${new Date().getTime()}`;
+                    triggerPopup("🚨 Ground Floor Alert!", "Laser Tripwire Broken!");
+                }
+            }).catch(() => {});
+
+            fetch(`${floor1IP}/status`).then(r => r.json()).then(data => {
+                updateBadge('f1Fire', data.fire, 'CLEAR', 'FIRE!');
+                updateBadge('f1Motion', data.motion, 'CLEAR', 'MOTION DETECTED');
+                updateBadge('f1Alarm', data.alarm, 'ARMED', 'ALARM TRIGGERED');
+
+                if (data.alarm && !f1LastAlarm) triggerPopup("⚠️ Security Alert!", "Wrong Password or Intruder!");
+                if (data.fire && !f1LastAlarm) triggerPopup("🔥 FIRE ALERT!", "Fire Detected in First Floor!");
+                f1LastAlarm = data.alarm || data.fire;
+            }).catch(() => {});
+
+            fetch(`${compIP}/status`).then(r => r.json()).then(data => {
+                updateBadge('fence', data.perimeterBreach, 'SECURE', 'BREACHED');
+                updateBadge('shock', data.shockActive, 'OFF', 'ACTIVE (SHOCKING)');
+                updateBadge('gndFire', data.gndFire, 'CLEAR', 'FIRE!');
+
+                let compCurrentAlarm = data.perimeterBreach || data.gndFire;
+                if (compCurrentAlarm && !compLastAlarm) triggerPopup("🛡️ Compound Alert!", "Fence Breached or Fire!");
+                compLastAlarm = compCurrentAlarm;
+            }).catch(() => {});
+        }
+
+        setInterval(pollSystems, 1500); 
+    </script>
+</body>
+</html>
