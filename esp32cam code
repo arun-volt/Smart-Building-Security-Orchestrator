@@ -1,0 +1,65 @@
+#include "esp_camera.h"
+#include <WiFi.h>
+#include <WebServer.h>
+
+const char* ssid = "AK";
+const char* password = "20012009";
+
+#define LDR_PIN 13 // 4-pin module DO
+
+WebServer server(80);
+bool laserTripped = false;
+camera_fb_t * lastPhoto = NULL;
+
+void setupCamera() {
+  camera_config_t config;
+  config.ledc_channel = LEDC_CHANNEL_0; config.ledc_timer = LEDC_TIMER_0;
+  config.pin_d0 = 5; config.pin_d1 = 18; config.pin_d2 = 19; config.pin_d3 = 21;
+  config.pin_d4 = 36; config.pin_d5 = 39; config.pin_d6 = 34; config.pin_d7 = 35;
+  config.pin_xclk = 0; config.pin_pclk = 22; config.pin_vsync = 25; config.pin_href = 23;
+  config.pin_sscb_sda = 26; config.pin_sscb_scl = 27; config.pin_pwdn = 32; config.pin_reset = -1;
+  config.xclk_freq_hz = 20000000; config.pixel_format = PIXFORMAT_JPEG;
+  config.frame_size = FRAMESIZE_VGA; config.jpeg_quality = 12; config.fb_count = 1;
+  esp_camera_init(&config);
+}
+
+void handlePhoto() {
+  server.sendHeader("Access-Control-Allow-Origin", "*"); 
+  if (lastPhoto) {
+    server.send_P(200, "image/jpeg", (const char *)lastPhoto->buf, lastPhoto->len);
+  } else {
+    server.send(404, "text/plain", "No photo captured yet");
+  }
+}
+
+void handleStatus() {
+  server.sendHeader("Access-Control-Allow-Origin", "*"); 
+  String json = "{\"laserTripped\": " + String(laserTripped ? "true" : "false") + "}";
+  server.send(200, "application/json", json);
+  laserTripped = false; 
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(LDR_PIN, INPUT);
+  
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) { delay(500); }
+  
+  Serial.println("\nESP32-CAM IP: "); Serial.println(WiFi.localIP());
+  
+  setupCamera();
+  server.on("/photo", handlePhoto);
+  server.on("/status", handleStatus);
+  server.begin();
+}
+
+void loop() {
+  server.handleClient();
+  if (digitalRead(LDR_PIN) == HIGH) { 
+    if (lastPhoto) esp_camera_fb_return(lastPhoto);
+    lastPhoto = esp_camera_fb_get();
+    laserTripped = true;
+    delay(5000); 
+  }
+}
