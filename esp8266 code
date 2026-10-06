@@ -1,0 +1,64 @@
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+
+const char* ssid = "AK";
+const char* password = "20012009";
+
+#define COMP_LDR_PIN D1
+#define VIB_PIN D2
+#define SHOCK_RELAY D3
+#define GND_FIRE_PIN D5
+#define BUZZER_PIN D6 // ஸ்ட்ரெய்ட்டா Buzzer (+)
+
+ESP8266WebServer server(80);
+bool shockActive = false;
+unsigned long shockTimer = 0;
+
+void handleStatus() {
+  server.sendHeader("Access-Control-Allow-Origin", "*"); 
+  String json = "{";
+  json += "\"perimeterBreach\": " + String(digitalRead(COMP_LDR_PIN) || digitalRead(VIB_PIN)) + ",";
+  json += "\"gndFire\": " + String(!digitalRead(GND_FIRE_PIN)) + ",";
+  json += "\"shockActive\": " + String(shockActive) + "}";
+  server.send(200, "application/json", json);
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(COMP_LDR_PIN, INPUT); pinMode(VIB_PIN, INPUT);
+  pinMode(GND_FIRE_PIN, INPUT); pinMode(SHOCK_RELAY, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(SHOCK_RELAY, LOW); 
+  digitalWrite(BUZZER_PIN, LOW);
+  
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) { delay(500); }
+  
+  Serial.println("\nCompound ESP8266 IP: "); Serial.println(WiFi.localIP());
+  
+  server.on("/status", handleStatus);
+  server.begin();
+}
+
+void loop() {
+  server.handleClient();
+  
+  // Fire Alert
+  if (digitalRead(GND_FIRE_PIN) == LOW) { 
+      digitalWrite(BUZZER_PIN, HIGH); 
+  } else { 
+      digitalWrite(BUZZER_PIN, LOW); 
+  }
+
+  // Laser or Vibration
+  if (digitalRead(COMP_LDR_PIN) == HIGH || digitalRead(VIB_PIN) == HIGH) {
+    digitalWrite(SHOCK_RELAY, HIGH); 
+    shockActive = true;
+    shockTimer = millis();
+  }
+  
+  if (shockActive && (millis() - shockTimer > 10000)) {
+    digitalWrite(SHOCK_RELAY, LOW);
+    shockActive = false;
+  }
+}
